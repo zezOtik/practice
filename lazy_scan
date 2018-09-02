@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+import re
+import sys
+import os
+import subprocess
+import socket
+
+
+def search_ip(data_of_threat):
+	data_of_client = []
+	data_date_of_connect = []
+	data_time_of_connect = []
+	for i in range(len(data_of_threat)):
+		start = int(re.search(r"client", data_of_threat[i]).start())
+		value = str(data_of_threat[i])
+		value = value[start : start + 25]
+		value = value[7:22]
+		top = re.search("#", value)
+		if top != None:
+			value = value[0 : int(top.start())]
+		data_of_client.append(value)
+		data_date_of_connect.append(data_of_threat[i][0:11])
+		data_time_of_connect.append(data_of_threat[i][12:24])
+
+	date = data_date_of_connect
+	data_date_of_connect = mapp_date(data_date_of_connect)
+	return data_of_client, data_date_of_connect, data_time_of_connect, date
+
+
+def time_correct(data_date_of_connect,data_time_of_connect):
+	return 1	
+
+
+def mapp_date(data_date_of_connect):
+	data_date = []
+	dict_mnts = dict(Jan = '01', Feb = '02', Mar = '03', Apr = '04', May = '05', Jun = '06', Jul = '07', Aug = '08', Sept = '09', Oct = '10', Nov = '11', Dec = '12')
+	#print(dict_mnts)
+	for date_time in data_date_of_connect:
+		mnts = str(dict_mnts[date_time[3:6]])
+		day = date_time[0:2]
+		year = date_time[7:11]
+		date = year + '/' + mnts + '/' + day
+		data_date.append(date)
+	return data_date
+
+def open_dns_file(data_of_threat, data_of_cloud):
+	directory = "/home/zotik/Downloads/scan_log/dns/"
+	files = os.listdir(directory)
+	for file in files:
+		handle = open("/home/zotik/Downloads/scan_log/dns/" + file, "r")
+	for line in handle:
+		for i in range(len(data_of_cloud)):
+			if re.search(data_of_cloud[i], line) != None:
+				data_of_threat.append(line)
+	handle.close()
+	return data_of_threat
+
+
+def open_net_flow(data_of_client, data_date_of_connect, data_time_of_connect):
+	flag = 0
+	directory = "/home/zotik/Downloads/scan_log/net-flow/"
+	files = os.listdir(directory)
+	cnt = 1
+	for date in data_date_of_connect:
+		date = str(date[0:4]) + "-" + str(date[5:7]) + "-"  + str(date[8:10])
+		for file in files:
+			if re.search(str(date), str(file)):
+				process = subprocess.call(["flowdumper","-se", '"' + format(data_of_client[cnt]) + '"' + ' eq $srcip', "/home/zotik/Downloads/scan_log/net-flow/" +format(file)], stdout=open("/home/zotik/Downloads/scan_log/net_flow_logs/" + str(data_of_client[cnt]) + "_" + str(cnt) + "_" + str(date) + "_" ".txt", 'w+'))
+				flag = 1
+				
+			if str(file) == str(files[len(files) - 1]) and flag == 0:
+				print("РќРµ СѓРґР°Р»РѕСЃСЊ РЅР°Р№С‚Рё Р»РѕРіРѕРІ РЅРµС‚-С„Р»РѕСѓ РЅР°: " + str(date))
+					
+		cnt += 1		
+	return 1
+
+
+def open_net_flow_logs(data_of_client, data_date_of_connect, data_time_of_connect, data_of_cloud):
+	directory = "/home/zotik/Downloads/scan_log/net_flow_logs/"
+	source_of_client = []
+	for i in data_date_of_connect:
+		source_of_client.append(0)
+	files = os.listdir(directory)
+	#data_resource = []
+	
+	for file in files:
+		cnt = re.split("_", file)
+		cnt = int(cnt[1])
+		handle = open("/home/zotik/Downloads/scan_log/net_flow_logs/" + file, "r")
+		for line in handle:
+			#data_resource[cnt] = 
+			data = re.split(" ", line)
+
+			data_resour = re.split("\.", data[4])
+			data_resour = data_resour[0] + "." + data_resour[1] + "." + data_resour[2] + "." + data_resour[3]
+
+			data_cl = re.split("\.", data[2])
+			data_cl = data_cl[0] + "." + data_cl[1] + "." + data_cl[2] + "." + data_cl[3]
+			print( data_of_client[cnt] + "РёСЃРїРѕР»СЊР·РѕРІР°Р» СЂРµСЃСѓСЂСЃ" + data_resour)
+			if data_time_of_connect[cnt] == data[1] and data_date_of_connect[cnt] == data[0] and data_of_client[cnt] == data_cl:
+				try:
+					source = socket.gethostbyaddr(data_resour)[0]
+					for i in range(len(data_of_cloud)):
+						if re.search(data_of_cloud[i], source) != None:
+							source_of_client[cnt] = data_resour
+				except:
+					continue
+		handle.close()
+	return source_of_client						
+		
+
+def open_osa(data_ip_source, data_of_client, date, data_time_of_connect, data_date_of_connect):
+	directory = "/home/zotik/Downloads/scan_log/osa/"
+	files = os.listdir(directory)
+	cnt = 0
+	for ip_source in data_ip_source:
+		if ip_source != 0:
+			dates = re.split("\/", data_date_of_connect)
+			dates = dates[0] + dates[1] + dates[2]
+			for file in files:
+				if re.search(dates, file) != None:
+					handle = open("/home/zotik/Downloads/scan_log/net_flow_logs/" + file, "r")
+					for line in handle:
+						if re.search(data_ip_source[cnt], file) != None and re.search(data_of_client[cnt], file) != None and re.search(data_time_of_connect[cnt], file) != None:
+							object_threat = re.search("bytes", line).start()
+							object_threat = line[object_threat: object_threat + 10]
+							object_threat = re.split(" ", object_threat)
+							object_threat = object_threat[1]
+							if int(object_threat) > 1000:
+								print( data_of_client[cnt] + "РёСЃРїРѕР»СЊР·РѕРІР°Р» СЂРµСЃСѓСЂСЃ" + data_ip_source[cnt])
+					
+		cnt += 1
+			
+
+def main():
+	# Р•СЃР»Рё, С‡С‚Рѕ РјРѕР¶РЅРѕ РїРѕРїРѕР»РЅРёС‚СЊ Р±РёР±Р»РёРѕС‚РµРєСѓ РѕР±Р»Р°Рє.
+
+	data_of_threat = []
+	data_of_cloud = ["drive.google", "onedrive", "dropbox", "mega.nz", 
+			"disk.yandex", "cloud.mail", "aws.amazon", "pcloud"]
+
+	data_of_threat = open_dns_file(data_of_threat, data_of_cloud)
+
+	data_of_client, data_date_of_connect, data_time_of_connect, date = search_ip(data_of_threat)
+	
+	open_net_flow(data_of_client, data_date_of_connect, data_time_of_connect)
+	
+	#print(data_time_of_connect, data_date_of_connect)
+	for data in data_time_of_connect:
+		data = re.split("\.", data)[0]
+	
+	for d in date:
+		d = re.split("\-", d)
+		d = d[1] + " " + d[0]
+	
+	data_ip_source = open_net_flow_logs( data_of_client, data_date_of_connect, data_time_of_connect, data_of_cloud )
+	
+	open_osa(data_ip_source, data_of_client, date, data_time_of_connect, data_date_of_connect)
+
+if __name__ == '__main__':
+	main()
